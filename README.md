@@ -5,4 +5,4 @@ swing-article-models is a file that estimates whether or not a batter will swing
 probit regression, LASSO/RIDGE, catboost, naive bayes, random forest, xgboost, and decision tree
 
 amateur-portfolio <br/>
-code for the following article
+link to the following article: https://davidgerth.blogspot.com/2022/06/amateur-portfolio-example.html
