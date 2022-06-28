@@ -1,0 +1,113 @@
+---
+title: "Who are the Unluckiest Catchers?"
+author: "David Gerth"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+A minor frustration with MLB Statcast data via Baseball Savant is that it does not list the home plate umpire, which makes estimating pitch framing abilities for catcher somewhat difficult. From the Savant FAQ page, they used to record the home plate umpire but that functionality has been depreciated.Thankfully, Umpire Scorecards (@UmpScorecards) has this data available on its website for free. It's simple to download the data and the append it to scraped data from Savant. For this article, I used the 2021 season and scraped the data using the pybaseball package, though the statistical analysis is done in R.
+
+As Angel Hernandez proves every week, what is called a ball versus a strike can vary wildly between umpires. A question that is interesting to me is if certain catchers are luckier than others by getting more favorable umpire assignments. To answer this, I want compare two models to predict whether or not a certain pitch is called a strike, one that incorporates both catchers and umpires versus one that only uses catchers. This will be done via mixed effects model were catchers and umpires are the random effects and certain things about the pitch (speed, x,y location, etc.) will be fixed. To test if the umpires do have an effect on if a pitch is called a strike, an ANOVA comparison is used. Then, to determine which catchers were the luckiest and unluckiest, predictions are made with both models, and the difference between predictions is the amount of "luck" a catcher had. For example, if the naive model (no umpire) predicts that the probability that the pitch being a strike is 45%, and the umpire-included model predicts 47%, the umpire is being 2% more generous than an average umpire and thus the catcher was "lucky" for having him.
+
+The data cleaning aspect is fairly simple. I combined the pitch-by-pitch data with the umpire data to create a final dataset that lists the home plate umpire for each pitch. I also filtered the dataset down to just the variables needed.
+
+```{r}
+library(readr)
+library(readxl)
+library(tidyverse)
+
+# pbp
+statcast_21 <- read_csv("C:/Users/david/Downloads/statcast-21.csv")
+# ump data
+ump_2021 <- read_excel("ump-2021.xlsx")
+colnames(ump_2021)[1] <- "game_date"
+colnames(ump_2021)[3] <- "home_team"
+
+combin <- left_join(statcast_21, ump_2021, by = c("game_date","home_team"))
+
+# exclude pitches that were swung as
+f_df <- combin %>%
+  filter(description == "called_strike" | description == "ball") %>%
+  select(type, p_throws, stand, plate_x, plate_z, release_spin_rate, release_extension, pfx_z, pfx_x, fielder_2, Umpire) 
+
+# convert characters to factors
+f_df[sapply(f_df, is.character)] = lapply(f_df[sapply(f_df, is.character)],as.factor)
+
+# check to make sure dataset has proper structures
+sapply(f_df, class)
+```
+
+The fixed effects for both models are: Pitching Throw Hand, Batting Handedness, Horizontal and Vertical plate location of the pitch, Spin Rate, Extension, Horizontal and Vertical Break
+
+The random effects for the naive model is the catcher id (Fielder 2) and then I add the Umpire random effect for the combined model.
+
+The anova checks to make sure that adding the Umpire random effect to the model is a statistically significant change, which it is. Comparing log likelihoods between the two models, the difference is small. This makes sense given that at the Major League level, the umpires are all very good and relatively the same, so there is not much variance. At the college or high school level I would assume there would be more variance.
+
+```{r}
+library(lme4)
+
+f_df$fielder_2 <- as.factor(f_df$fielder_2)
+model1 <- type ~ p_throws + stand + plate_x * plate_z + release_spin_rate + release_extension + pfx_z * pfx_x + (1|fielder_2)
+model2 <- type ~ p_throws + stand + plate_x * plate_z + release_spin_rate + release_extension + pfx_z * pfx_x + (1|fielder_2) + (1 | Umpire)
+
+m0 <- glmer(model1, data = f_df,
+            family = binomial(),
+            nAGQ = 0,
+            control=glmerControl(optimizer = "nloptwrap")
+)
+
+m1 <- glmer(model2, data = f_df,
+            family = binomial(),
+            nAGQ = 0,
+            control=glmerControl(optimizer = "nloptwrap")
+)
+
+summary(m0)
+summary(m1)
+
+anova(m0, m1)
+```
+
+The anova test confirms that adding the umpire variable is important.
+
+Now, to determine the luckiest and unluckiest catchers, I made the predictions with both models and took the difference between the two predictions, using the methodology above. Then, to make the leaderboards more readable, since Statcast exports its player identification in the form of ID number, not name, I downloaded ID data from Razzball and combined it with the Statcast data. The leaderboard dataframe is the full summary of all of the players and their respective "luck" averages.
+
+```{r}
+f_df$no_ump_pred <- predict(m0, f_df, type = "response")
+f_df$ump_pred <- predict(m1, f_df, type = "response")
+f_df$dif = f_df$ump_pred - f_df$no_ump_pred
+
+fl <- f_df %>%
+  select(fielder_2, dif) %>%
+  drop_na() # about 1600 rows need to be dropped. Dataset has ~350k in general so not a big deal
+
+
+library(readxl)
+mlbam_id <- read_excel("mlbam_id.xlsx")
+ids <- mlbam_id[,c(2,3)]
+colnames(ids)[2] <- "fielder_2"
+
+sapply(fl, class)
+sapply(ids, class)
+ids$fielder_2 <- as.factor(ids$fielder_2)
+
+fl <- left_join(fl, ids, by = "fielder_2")
+
+leaderboard <- fl %>%
+  group_by(Name) %>%
+  summarise(mean_dif = round(mean(dif),5))
+```
+
+Who was the luckiest and unluckiest catcher? Austin Allen was the luckiest, getting on average a 0.6% boost in strike probability called. Yohel Pozo was the unluckiest, losing around 0.4% on average. In general, these are small amounts, and so the (un)luckiness of a particular catcher is barely noticable.
+```{r}
+unlucky <- leaderboard[order(leaderboard$mean_dif),]
+head(unlucky)
+lucky <- leaderboard[order(-leaderboard$mean_dif),]
+head(lucky)
+```
+
+Hopefully this was an interesting article on catcher framing and the effects of umpires on called strikes. While the results ended up not being that interesting, I hope that those those who are not familiar with mixed effects models found this to be an interesting first tutorial.
