@@ -1,0 +1,52 @@
+---
+title: "Does Difference in Expected Spin Axis Affect Distance of Batted Balls for Sinkers?"
+author: "David Gerth"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Import Savant Data for 2022 (scraped using pybaseball)
+
+statcast22 = read_csv("C:/Users/david/PycharmProjects/pythonProject/statcast22.csv")
+si = statcast22 %>%
+  filter(pitch_type == "SI") 
+
+# Estimate Expected Spin Axis
+m0 = lm(spin_axis ~ release_pos_x + release_pos_z, data = si)
+summary(m0)
+```
+
+This simple model of release point from the x and z coordinate models the data well. A basic calibration check for this model is to see that a pitch thrown at 11:00 and 1:00 have the roughly same spin axis, just mirrored, which this model passes.
+
+Moving to the next section, I will be using a mixed effects model to estimated batted ball distance. This is a fairly simple model as well, with the only random effect being ballpark, and the fixed effects being location (x,z coordinate of pitch), velocity, spin rate and movement (x,z) of the pitch, difference in predicted spin axis versus actual, launch angle and exit velocity, and if the pitcher and batter are the same handedness. The one added complexity is that the launch angle term will be smooth. The mgcv package is good for this type of problem, as it allows for both smooth and random effects.
+
+```{r}
+
+si_new = si %>%
+  mutate(p_axis = predict(m0, si),
+         axis_diff = spin_axis - p_axis,
+         adj_spin = release_spin_rate / 1000,
+         same_hand = if_else(p_throws == stand, 1, 0)) %>%
+  filter(is.na(hit_distance_sc) == FALSE)
+
+library(mgcv)
+
+si_new$home_team <- as.factor(si_new$home_team) 
+m0 = gam(hit_distance_sc ~ same_hand + axis_diff + plate_x + plate_z + pfx_x + pfx_z + release_speed + adj_spin + launch_speed + s(launch_angle) + s(home_team, bs = "re"), data = si_new)
+summary(m0)
+
+```
+
+As you can see, differences in spin rate axis from expected is not significant in this model. There is some hope though. Here, I am saying that being -50 degrees relative to expectation is the different than +50 degrees. Let's see what happens if they are the same.
+
+```{r}
+m0 = gam(hit_distance_sc ~ same_hand + abs(axis_diff) + plate_x + plate_z + pfx_x + pfx_z + release_speed + adj_spin + launch_speed + s(launch_angle) + s(home_team, bs = "re"), data = si_new)
+summary(m0)
+```
+
+Still insignificant. This was surprising to me, since being an outlier tends to have some sort of large effect. Perhaps with a more sophisticated model, we could find something here, but it's good practice to mine data in hopes of finding p values less than 5%, so I will leave this experiment here.
