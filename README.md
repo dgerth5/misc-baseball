@@ -14,4 +14,4 @@ https://rpubs.com/dgerth5/919614
 
 expected spin axis affecting batted ball distance <br/>
 Created a basic model for expected spin axis, then saw if differences in spin axis v expect lead to change in batted ball distance using GAMs. <br/>
-
+https://rpubs.com/dgerth5/936108
