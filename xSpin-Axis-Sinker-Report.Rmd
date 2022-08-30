@@ -1,5 +1,5 @@
 ---
-title: "Does Difference in Expected Spin Axis Affect Distance of Batted Balls for Sinkers?"
+title: "Does Difference in Expected v Real Spin Axis Affect Distance of Batted Balls for Sinkers?"
 author: "David Gerth"
 date: "`r Sys.Date()`"
 output: html_document
@@ -9,7 +9,14 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+In the past couple weeks, I have been researching spin axis of pitches and if the difference between expected spin axis and actual spin axis affects certain outcomes. Here, I want to present a mini study, where I estimate expected spin axis of a sinker given the x and z coordinates of the pitcher's release point, and if the difference between expected and real spin axis affect distance of batted balls. For this study, I use data from the 2022 season, which is a large enough to get a good fit for the expected spin axis model without having to worry about controlling for different ball types between seasons.
+
+This first code chunk loads in the data and filters down to just sinkers. Then, I use linear regression to fit a model of spin axis where the dependent variables are release point in the x,z coordinate plane.
+
 ```{r}
+library(readr)
+library(tidyverse)
+
 # Import Savant Data for 2022 (scraped using pybaseball)
 
 statcast22 = read_csv("C:/Users/david/PycharmProjects/pythonProject/statcast22.csv")
@@ -45,8 +52,8 @@ summary(m0)
 As you can see, differences in spin rate axis from expected is not significant in this model. There is some hope though. Here, I am saying that being -50 degrees relative to expectation is the different than +50 degrees. Let's see what happens if they are the same.
 
 ```{r}
-m0 = gam(hit_distance_sc ~ same_hand + abs(axis_diff) + plate_x + plate_z + pfx_x + pfx_z + release_speed + adj_spin + launch_speed + s(launch_angle) + s(home_team, bs = "re"), data = si_new)
-summary(m0)
+m1 = gam(hit_distance_sc ~ same_hand + abs(axis_diff) + plate_x + plate_z + pfx_x + pfx_z + release_speed + adj_spin + launch_speed + s(launch_angle) + s(home_team, bs = "re"), data = si_new)
+summary(m1)
 ```
 
-Still insignificant. This was surprising to me, since being an outlier tends to have some sort of large effect. Perhaps with a more sophisticated model, we could find something here, but it's good practice to mine data in hopes of finding p values less than 5%, so I will leave this experiment here.
+Spin axis difference is still insignificant. This was surprising to me, since being an outlier tends to have some sort of large effect. Perhaps with a more sophisticated model, we could find something here, but it's good practice to mine data in hopes of finding p values less than 5%, so I will leave this experiment here.
